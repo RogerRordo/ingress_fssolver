@@ -1,0 +1,12 @@
+requests[socks]
+lxml
+beautifulsoup4
+pymysql
+soupsieve
+discord-webhook
+json
+opencv-python
+pillow
+photohash
+numpy
+matplotlib
