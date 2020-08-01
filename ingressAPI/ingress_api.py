@@ -1,13 +1,9 @@
 #! /usr/local/bin/python
 #-*- coding: utf-8 -*-
 import requests
-import re, sys
-import lxml
+import re
 import json
-from datetime import datetime
 from time import time
-import getpass
-from bs4 import BeautifulSoup as bs
 from requests.utils import dict_from_cookiejar, cookiejar_from_dict
 import math
 __AUTHOR__ = 'lc4t0.0@gmail.com'

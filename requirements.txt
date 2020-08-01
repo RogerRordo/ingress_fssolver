@@ -1,12 +1,4 @@
-requests[socks]
-lxml
-beautifulsoup4
-pymysql
-soupsieve
-discord-webhook
-json
-opencv-python
-pillow
-photohash
-numpy
-matplotlib
+requests==2.24.0
+opencv-contrib-python==3.4.2.16
+numpy==1.19.0
+Pillow==7.2.0
