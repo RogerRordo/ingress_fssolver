@@ -152,7 +152,7 @@ def downloader():
 
 def isSameColor(a, b):
     ''' 两个rgb同色的标准 '''
-    return (abs(a[0] - b[0]) <= 5 and abs(a[1] - b[1]) <= 5 and abs(a[2] - b[2]) <= 5)
+    return (abs(a[0] - b[0]) <= 10 and abs(a[1] - b[1]) <= 10 and abs(a[2] - b[2]) <= 10)
 
 
 def drawSubfig(subs):
@@ -238,22 +238,22 @@ def spliter():
     subs.sort(key=lambda x: (x['col'], x['cord'][0]))  # 排序以获取row
     lastCol = 0
     row = 1
-    for elem in subs:
+    for sub in subs:
         row = row + 1
-        if (elem['col'] != lastCol):
+        if (sub['col'] != lastCol):
             row = 1
-            lastCol = elem['col']
-        elem['row'] = row
+            lastCol = sub['col']
+        sub['row'] = row
 
-        [x0, y0, x1, y1] = elem['cord']
-        elem['hash'] = ahash(img[x0:x1, y0:y1])
+        [x0, y0, x1, y1] = sub['cord']
+        sub['hash'] = ahash(img[x0:x1, y0:y1])
 
     drawSubfig(subs)
 
     return subs
 
 
-def solver(subs):
+def solver(subs, toCheck):
     print('Solving ...')
 
     # 获取爬取po的hash等信息，存进objs
@@ -325,6 +325,20 @@ def solver(subs):
     cv2.imshow('solution', canvas)
     cv2.waitKey(0)
 
+    # 检查
+    if toCheck:
+        img = cv2.imread(config['prob'])
+        for sub in subs:
+            [x0, y0, x1, y1] = sub['cord']
+            obj = sub['match_result']
+            img1 = cv2.resize(img[x0:x1, y0:y1], (512, 512))
+            img2 = cv2.resize(cv2.imread(obj['path']), (512, 512))
+            h_all = np.hstack((img1, img2))
+            windowName = str(obj['lat']) + '_' + str(obj['lng'])
+            cv2.imshow(windowName, h_all)
+            cv2.waitKey(0)
+            cv2.destroyWindow(windowName)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -332,6 +346,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--crawl', action='store_true', help='Crawl portals data')
     parser.add_argument('-d', '--download', action='store_true', help='Download pictures of portals')
     parser.add_argument('-s', '--solve', action='store_true', help='Solve FS code')
+    parser.add_argument('--check', action='store_true', help='Check when solving FS code')
     args = parser.parse_args()
     config_path = args.config
     config = create_config(config_path)
@@ -354,4 +369,4 @@ if __name__ == '__main__':
         if not os.path.exists(config['prob']):
             print('[!] ' + config['prob'] + ' not found')
         else:
-            solver(spliter())
+            solver(spliter(), args.check)
