@@ -105,7 +105,7 @@ def crawler():
         lat = (poDetails[idx][2]) / 1e6
         lng = (poDetails[idx][3]) / 1e6
         url = poDetails[idx][7]
-        if url == '':
+        if url == '' or url is None:
             print('[!] Picture lost : ' + str(lat) + ',' + str(lng))
             continue
         poList.append({'lat': lat, 'lng': lng, 'url': url})
