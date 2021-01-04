@@ -7,6 +7,7 @@ import math
 import argparse
 import requests
 import numpy as np
+import pickle
 from time import sleep
 from ingressAPI import IntelMap, MapTiles
 from PIL import Image, ImageDraw
@@ -32,11 +33,11 @@ def create_config(config_path):
     config['delay'] = config_raw.getint('Crawl', 'DELAY')
 
     config['prob'] = config_raw.get('Solve', 'PROB')
+    config['subs'] = config_raw.get('Solve', 'SUBS')
     config['urlList'] = config_raw.get('Solve', 'URL_LIST')
     config['sol'] = config_raw.get('Solve', 'SOL')
     config['initRow'] = config_raw.getint('Solve', 'INIT_ROW')
     config['minPix'] = config_raw.getint('Solve', 'MIN_PIX')
-    config['minColWidth'] = config_raw.getint('Solve', 'MIN_COL_WIDTH')
     config['bgColorR'] = config_raw.getint('Solve', 'BGCOLOR_R')
     config['bgColorG'] = config_raw.getint('Solve', 'BGCOLOR_G')
     config['bgColorB'] = config_raw.getint('Solve', 'BGCOLOR_B')
@@ -58,13 +59,17 @@ def getAllPortals(login, tiles, totalTiles):
 
         iitcTileName = ('{0}_{1}_{2}_0_8_100').format(zoom, iitc_xtile, iitc_ytile)
         currentTile = idx + 1
-        print(str('{0}/{1} Getting portals from tile : {2}').format(currentTile, totalTiles, iitcTileName))
-        try:
-            tilesData.append(login.get_entities([iitcTileName]))
-            if config['delay'] > 0:
-                sleep(config['delay'])
-        except:
-            print(str('[!] Something went wrong while getting portal from tile {0}').format(currentTile))
+        while True:
+            print(str('{0}/{1} Getting portals from tile : {2}').format(currentTile, totalTiles, iitcTileName))
+            try:
+                tilesData.append(login.get_entities([iitcTileName]))
+                if config['delay'] > 0:
+                    sleep(config['delay'])
+            except Exception as e:
+                print(str('[!] Something went wrong while getting portal from tile {0}').format(currentTile))
+                print(e)
+            else:
+                break
     for tile_data in tilesData:
         try:
             if 'result' in tile_data:
@@ -76,8 +81,9 @@ def getAllPortals(login, tiles, totalTiles):
                             if entry[2][0] == 'p':
                                 poID.append(entry[0])
                                 poDetails.append(entry[2])
-        except:
+        except Exception as e:
             print('[!] Could not parse all prtals')
+            print(e)
     return poDetails, poID
 
 
@@ -120,18 +126,20 @@ def download_img(img_url, lat, lng, cnt, total):
     ''' 下载单张图片 '''
     fname = str(lat) + '_' + str(lng) + '.jpg'
     print('Downloading ' + str(cnt) + '/' + str(total) + ' : ' + fname)
+    if os.path.exists(config['picDir'] + '\\' + fname):
+        return False
     header = {
         "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
     }
     r = requests.get(img_url, headers=header, stream=True)
+    if config['delay'] > 0:
+        sleep(config['delay'])
     if r.status_code == 200:
         f = open(config['picDir'] + '\\' + fname, 'wb')
         f.write(r.content)
         f.close()
-        del r
         return False
-    del r
     return True
 
 
@@ -146,8 +154,7 @@ def downloader():
         lat = float(poList[i]['lat'])
         lng = float(poList[i]['lng'])
         while download_img(url, int(lat * 1E6), int(lng * 1E6), i + 1, total):
-            sleep(config['delay'])
-        sleep(config['delay'])
+            pass
 
 
 def isSameColor(a, b):
@@ -212,7 +219,7 @@ def ahash(image, hash_size=16):
     return int(bits, 2).__format__(hashformat)
 
 
-def spliter():
+def splitter():
     print('Splitting ...')
     bgcolor = [config['bgColorR'], config['bgColorG'], config['bgColorB']]
     subs = []
@@ -221,16 +228,16 @@ def spliter():
     weight = img.shape[1]
     p = [[False for j in range(weight)] for i in range(height)]
     col = 0
-    lastColY = -config['minColWidth'] - 1
+    lastColY = -1
     for y in range(weight):
         for x in range(height):
             if (x >= config['initRow'] and not p[x][y] and not isSameColor(img[x][y], bgcolor)):
                 [cnt, x0, y0, x1, y1] = splitTarget_flood(x, y, p, img)
                 if cnt <= config['minPix']:
                     continue
-                if y > lastColY + config['minColWidth']:
+                if y > lastColY:
                     col = col + 1
-                    lastColY = y
+                    lastColY = y1
                 temp = {'cord': [x0, y0, x1, y1], 'col': col, 'row': 0, 'hash': '', 'match_result': None}
                 subs.append(temp)
                 # print(temp)
@@ -253,7 +260,7 @@ def spliter():
     return subs
 
 
-def solver(subs, toCheck):
+def solver(subs):
     print('Solving ...')
 
     # 获取爬取po的hash等信息，存进objs
@@ -268,13 +275,39 @@ def solver(subs, toCheck):
         objs.append(temp)
 
     # 匹配
+    img = cv2.imread(config['prob'])
     for sub in subs:
-        mnd = 1000
+        [x0, y0, x1, y1] = sub['cord']
+        img1 = cv2.resize(img[x0:x1, y0:y1], (512, 512))
+        sub['match_result'] = None
+
+        # 按距离排序
         for obj in objs:
-            d = hashDistance(sub['hash'], obj['hash'])
-            if (d < mnd):
-                mnd = d
-                sub['match_result'] = obj
+            obj['dist'] = hashDistance(sub['hash'], obj['hash'])
+        objs.sort(key=lambda x: x.get('dist'))
+
+        # 对比界面，进行匹配
+        for obj in objs:
+            img2 = cv2.resize(cv2.imread(obj['path']), (512, 512))
+            h_all = np.hstack((img1, img2))
+            windowName = str(obj['lat']) + '_' + str(obj['lng'])
+            cv2.imshow(windowName, h_all)
+            while True:
+                key = cv2.waitKey(0)
+                if key == 13:  # Enter
+                    sub['match_result'] = obj
+                    cv2.destroyWindow(windowName)
+                    break
+                elif key == 32:  # Space
+                    cv2.destroyWindow(windowName)
+                    break
+                elif key == 27:  # Esc
+                    cv2.destroyWindow(windowName)
+                    return
+            if sub['match_result'] is not None:
+                break
+        if sub['match_result'] is None:  # 匹配到底，失败
+            return
 
     # 生成intel links
     urls = set()
@@ -325,28 +358,17 @@ def solver(subs, toCheck):
     cv2.imshow('solution', canvas)
     cv2.waitKey(0)
 
-    # 检查
-    if toCheck:
-        img = cv2.imread(config['prob'])
-        for sub in subs:
-            [x0, y0, x1, y1] = sub['cord']
-            obj = sub['match_result']
-            img1 = cv2.resize(img[x0:x1, y0:y1], (512, 512))
-            img2 = cv2.resize(cv2.imread(obj['path']), (512, 512))
-            h_all = np.hstack((img1, img2))
-            windowName = str(obj['lat']) + '_' + str(obj['lng'])
-            cv2.imshow(windowName, h_all)
-            cv2.waitKey(0)
-            cv2.destroyWindow(windowName)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='default.ini', help='Config file to use')
     parser.add_argument('-c', '--crawl', action='store_true', help='Crawl portals data')
     parser.add_argument('-d', '--download', action='store_true', help='Download pictures of portals')
-    parser.add_argument('-s', '--solve', action='store_true', help='Solve FS code')
-    parser.add_argument('--check', action='store_true', help='Check when solving FS code')
+    parser.add_argument('-sp', '--split', action='store_true', help='Split the picture of the problem')
+    parser.add_argument('-so',
+                        '--solve',
+                        action='store_true',
+                        help='Solve FS code (Enter -> Confirm, Space -> Eliminate, Esc -> Quit)')
     args = parser.parse_args()
     config_path = args.config
     config = create_config(config_path)
@@ -365,8 +387,20 @@ if __name__ == '__main__':
         else:
             downloader()
 
-    if args.solve:
+    if args.split:
         if not os.path.exists(config['prob']):
             print('[!] ' + config['prob'] + ' not found')
         else:
-            solver(spliter(), args.check)
+            subs = splitter()
+            with open(config['subs'], "wb") as pkl:
+                pickle.dump(subs, pkl)
+
+    if args.solve:
+        try:
+            with open(config['subs'], "rb") as pkl:
+                subs = pickle.load(pkl)
+        except Exception as e:
+            print('[!] ' + config['subs'] + ' not found')
+            print(e)
+        else:
+            solver(subs)
